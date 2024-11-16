@@ -1954,7 +1954,12 @@ class MonitorManager(ResourceManager):
         create_payload = kwargs.get('create_payload',
                                     self._create_payload(resource, service))
 
+        keys_ignore_ping_tcp = ['expected_codes', 'url_path', 'http_method']
         for key in self.mutable_props.keys():
+            if old_resource.get('type') == 'PING' and key in keys_ignore_ping_tcp:
+                continue
+            if old_resource.get('type') == 'TCP' and key in keys_ignore_ping_tcp:
+                continue
             old = old_resource.get(key)
             new = resource.get(key)
             if old != new:
