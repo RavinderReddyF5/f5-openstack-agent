@@ -46,7 +46,7 @@ jobs:
 
       - name: Install pip and dependencies
         run: |
-          python -m pip install pip==19.0.3
+          sudo python -m pip install pip==19.0.3
           # pip install -Iv tox==3.25.1
-          pip2 install tox==3.25.1
-          pip2 install -r requirements.style.txt
+          sudo pip2 install tox==3.25.1
+          sudo pip2 install -r requirements.style.txt
