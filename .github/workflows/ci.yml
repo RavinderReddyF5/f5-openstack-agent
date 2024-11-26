@@ -8,13 +8,40 @@ on:
     branches:
       - '**'  # Run on pull requests to all branches
 
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:  # Define static global environment variables
+      DIST_REPO: "f5-openstack-agent-dist"
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+
+      - name: Set Dynamic Environment Variables
+        id: set_env_vars
+        run: |
+          # Get package version
+          PKG_VERSION=$(python -c "import f5_openstack_agent; print(f5_openstack_agent.__version__)")
+
+          # Get package release version
+          PKG_RELEASE=$(python ${DIST_REPO}/scripts/get-version-release.py --release)
+
+          # Set other variables based on the above
+          echo "PKG_VERSION=${PKG_VERSION}" >> $GITHUB_ENV
+          echo "PKG_RELEASE=${PKG_RELEASE}" >> $GITHUB_ENV
+          echo "PKG_RELEASE_EL7=${DIST_REPO}/rpms/build/f5-openstack-agent-${PKG_VERSION}-${PKG_RELEASE}.el7.noarch.rpm" >> $GITHUB_ENV
+          echo "PKG_RELEASE_1404=${DIST_REPO}/deb_dist/python-f5-openstack-agent_${PKG_VERSION}-${PKG_RELEASE}_1404_all.deb" >> $GITHUB_ENV
+          echo "RELEASE_TAG=v$(echo $PKG_VERSION | cut -d . -f 1,2)" >> $GITHUB_ENV
+
+      - name: Use Environment Variables
+        run: |
+          echo "Package Version: $PKG_VERSION"
+          echo "Package Release: $PKG_RELEASE"
+          echo "EL7 Package Path: $PKG_RELEASE_EL7"
+          echo "1404 Package Path: $PKG_RELEASE_1404"
+          echo "Release Tag: $RELEASE_TAG"
 
       - name: Set up Python 2
         run: |
