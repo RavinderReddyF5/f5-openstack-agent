@@ -99,7 +99,8 @@ deploy:
   #     repo: F5Networks/f5-openstack-agent
   #     tags: true
   #   script:
-  #     - ./docs/scripts/docker-docs.sh ./docs/scripts/test-docs.sh && ./docs/scripts/deploy-docs.sh publish-product-docs-to-prod openstack/agent $CTLR_VERSION
+  #     - echo $CTLR_VERSION
+  #     # - ./docs/scripts/docker-docs.sh ./docs/scripts/test-docs.sh && ./docs/scripts/deploy-docs.sh publish-product-docs-to-prod openstack/agent $CTLR_VERSION
 
 notifications:
   slack:
