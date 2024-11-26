@@ -1,0 +1,42 @@
+name: CI Workflow
+
+on:
+  push:
+    branches:
+      - '**'  # Run on pushes to all branches
+  pull_request:
+    branches:
+      - '**'  # Run on pull requests to all branches
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '2.7'  # Specify Python version
+
+      - name: Download Docker images
+        run: |
+          wget https://github.com/F5Networks/docker-images/raw/master/centos:6.tar.gz
+          wget https://github.com/F5Networks/docker-images/raw/master/centos:7.tar.gz
+          wget https://github.com/F5Networks/docker-images/raw/master/f5devcentral_containthedocs:latest.tar.gz
+          wget https://github.com/F5Networks/docker-images/raw/master/ubuntu:trusty.tar.gz
+
+      - name: Load Docker images
+        run: |
+          docker load -i centos:6.tar.gz
+          docker load -i centos:7.tar.gz
+          docker load -i f5devcentral_containthedocs:latest.tar.gz
+          docker load -i ubuntu:trusty.tar.gz
+
+      - name: Install pip and dependencies
+        run: |
+          python -m pip install pip==19.0.3
+          pip install -Iv tox==3.25.1
+          pip install -r requirements.style.txt
