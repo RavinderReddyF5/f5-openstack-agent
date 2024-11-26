@@ -5,6 +5,17 @@
 Release Notes for F5 Openstack Agent
 ====================================
 
+v9.10.8 (Pike, Queens)
+--------------------------------------------
+NOTE: This version of F5 Openstack Agent supports Pike and Queens Openstack releases.
+
+Bug Fixes
+`````````
+* LBaaS | F5 OpenStack LBaaS Agents Fail to Update Gateway ICMP Monitors Due to Key Word 'recv'
+
+Limitations
+```````````
+
 v9.10.7 (Pike, Queens)
 --------------------------------------------
 NOTE: This version of F5 Openstack Agent supports Pike and Queens Openstack releases.
