@@ -79,7 +79,7 @@ jobs:
           echo "EL7 Package Path: $PKG_RELEASE_EL7"
           echo "1404 Package Path: $PKG_RELEASE_1404"
           echo "Release Tag: $RELEASE_TAG"
-          sudo python -m pip install pip==19.0.3
+          sudo python -m pip2 install pip2==19.0.3
           # pip install -Iv tox==3.25.1
           sudo pip2 install tox==3.25.1
           sudo pip2 install -r requirements.style.txt
