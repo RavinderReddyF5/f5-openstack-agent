@@ -47,11 +47,11 @@ jobs:
         run: |
           sudo rm -f $(which python) $(which pip)
           # sudo apt-get install python2.7
-          sudo apt install python2.7
-          # python-pip
-          curl https://bootstrap.pypa.io/pip/2.7/get-pip.py -o get-pip.py
-          python2.7 get-pip.py
-          sudo ln -sf "$(which python2.7)" "$(dirname $(which python2.7))/python"
+          sudo apt install python2.7 python-pip
+          sudo apt update
+          curl https://bootstrap.pypa.io/pip/2.7/get-pip.py --output get-pip.py
+          sudo python2.7 get-pip.py
+          # sudo ln -sf "$(which python2.7)" "$(dirname $(which python2.7))/python"
 
       # - name: Set up Python
       #   uses: actions/setup-python@v2
@@ -79,7 +79,7 @@ jobs:
           echo "EL7 Package Path: $PKG_RELEASE_EL7"
           echo "1404 Package Path: $PKG_RELEASE_1404"
           echo "Release Tag: $RELEASE_TAG"
-          sudo python -m pip2 install pip2==19.0.3
+          sudo python -m pip install pip==19.0.3
           # pip install -Iv tox==3.25.1
           sudo pip2 install tox==3.25.1
           sudo pip2 install -r requirements.style.txt
