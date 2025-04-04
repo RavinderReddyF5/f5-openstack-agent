@@ -12,7 +12,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: coatldev/six:latest
+    # container: coatldev/six:latest
+    container: centos:7
     # container: centos/python-27-centos7
     env:  # Define static global environment variables
       DIST_REPO: "f5-openstack-agent-dist"
@@ -20,25 +21,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-        
-      # # - name: Set up Python
-      # #   uses: actions/setup-python@v2
-      # #   with:
-      # #     python-version: '2.7'  # Specify Python version
-
-      # - name: Set up Python 2
-      #   run: |
-      #     # sudo rm -f $(which python) $(which pip)
-      #     # sudo apt update
-      #     # sudo apt upgrade
-      #     # sudo apt install python2.7
-      #     # python-pip
-      #     sudo apt update
-      #     curl https://bootstrap.pypa.io/pip/2.7/get-pip.py --output get-pip.py
-      #     sudo python2.7 get-pip.py
-      #     # sudo ln -sf "$(which python2.7)" "$(dirname $(which python2.7))/python"
 
       - name: Set Dynamic Environment Variables
+        # container: centos/python-27-centos7
         id: set_env_vars
         run: |
           # Get package version
@@ -61,26 +46,6 @@ jobs:
           echo "EL7 Package Path: $PKG_RELEASE_EL7"
           echo "1404 Package Path: $PKG_RELEASE_1404"
           echo "Release Tag: $RELEASE_TAG"
-
-
-      # - name: Set up Python
-      #   uses: actions/setup-python@v2
-      #   with:
-      #     python-version: '2.7'  # Specify Python version
-
-      - name: Download Docker images
-        run: |
-          wget https://github.com/F5Networks/docker-images/raw/master/centos:6.tar.gz
-          wget https://github.com/F5Networks/docker-images/raw/master/centos:7.tar.gz
-          wget https://github.com/F5Networks/docker-images/raw/master/f5devcentral_containthedocs:latest.tar.gz
-          wget https://github.com/F5Networks/docker-images/raw/master/ubuntu:trusty.tar.gz
-
-      - name: Load Docker images
-        run: |
-          docker load -i centos:6.tar.gz
-          docker load -i centos:7.tar.gz
-          docker load -i f5devcentral_containthedocs:latest.tar.gz
-          docker load -i ubuntu:trusty.tar.gz
 
       - name: Install pip and dependencies
         run: |
@@ -107,12 +72,28 @@ jobs:
           echo "stdeb.cfg:"
           cat f5-openstack-agent-dist/deb_dist/stdeb.cfg
           f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "7"
-          # - f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "6"
-          # pzhang: toomanyrequests: You have reached your pull rate limit. You may increase the limit by authenticating and upgrading: https://www.docker.com/increase-rate-limit
           f5-openstack-agent-dist/scripts/package_agent.sh "ubuntu" "14.04"
           sudo chown -R travis:travis ${DIST_REPO}/rpms/build
-          # pzhang: toomanyrequests: You have reached your pull rate limit. You may increase the limit by authenticating and upgrading: https://www.docker.com/increase-rate-limit
           sudo chown -R travis:travis ${DIST_REPO}/deb_dist/*.deb
           f5-openstack-agent-dist/scripts/test_install.sh "redhat" "7" ${PKG_RELEASE_EL7}
-          # pzhang: toomanyrequests: You have reached your pull rate limit. You may increase the limit by authenticating and upgrading: https://www.docker.com/increase-rate-limit
           f5-openstack-agent-dist/scripts/test_install.sh "ubuntu" "14.04" ${PKG_RELEASE_1404}
+
+      # - name: Set up Python
+      #   uses: actions/setup-python@v2
+      #   with:
+      #     python-version: '2.7'  # Specify Python version
+
+      - name: Download Docker images
+        run: |
+          wget https://github.com/F5Networks/docker-images/raw/master/centos:6.tar.gz
+          wget https://github.com/F5Networks/docker-images/raw/master/centos:7.tar.gz
+          wget https://github.com/F5Networks/docker-images/raw/master/f5devcentral_containthedocs:latest.tar.gz
+          wget https://github.com/F5Networks/docker-images/raw/master/ubuntu:trusty.tar.gz
+
+      - name: Load Docker images
+        run: |
+          docker load -i centos:6.tar.gz
+          docker load -i centos:7.tar.gz
+          docker load -i f5devcentral_containthedocs:latest.tar.gz
+          docker load -i ubuntu:trusty.tar.gz
+
