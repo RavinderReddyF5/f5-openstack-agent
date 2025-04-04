@@ -18,6 +18,16 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+        
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '2.7'  # Specify Python version
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '2.7'
 
       - name: Set Dynamic Environment Variables
         id: set_env_vars
@@ -43,16 +53,16 @@ jobs:
           echo "1404 Package Path: $PKG_RELEASE_1404"
           echo "Release Tag: $RELEASE_TAG"
 
-      - name: Set up Python 2
-        run: |
-          sudo rm -f $(which python) $(which pip)
-          # sudo apt-get install python2.7
-          sudo apt install python2.7
-          # python-pip
-          sudo apt update
-          curl https://bootstrap.pypa.io/pip/2.7/get-pip.py --output get-pip.py
-          sudo python2.7 get-pip.py
-          # sudo ln -sf "$(which python2.7)" "$(dirname $(which python2.7))/python"
+      # - name: Set up Python 2
+      #   run: |
+      #     sudo rm -f $(which python) $(which pip)
+      #     # sudo apt-get install python2.7
+      #     sudo apt install python2.7
+      #     # python-pip
+      #     sudo apt update
+      #     curl https://bootstrap.pypa.io/pip/2.7/get-pip.py --output get-pip.py
+      #     sudo python2.7 get-pip.py
+      #     # sudo ln -sf "$(which python2.7)" "$(dirname $(which python2.7))/python"
 
       # - name: Set up Python
       #   uses: actions/setup-python@v2
