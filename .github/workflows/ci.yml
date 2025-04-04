@@ -12,6 +12,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # container: coatldev/six:latest
+    container: centos/python-27-centos7
     env:  # Define static global environment variables
       DIST_REPO: "f5-openstack-agent-dist"
 
@@ -26,10 +28,10 @@ jobs:
 
       - name: Set up Python 2
         run: |
-          sudo rm -f $(which python) $(which pip)
-          sudo apt update
-          sudo apt upgrade
-          sudo apt install python2.7
+          # sudo rm -f $(which python) $(which pip)
+          # sudo apt update
+          # sudo apt upgrade
+          # sudo apt install python2.7
           # python-pip
           sudo apt update
           curl https://bootstrap.pypa.io/pip/2.7/get-pip.py --output get-pip.py
