@@ -54,7 +54,7 @@ jobs:
           echo "EL7 Package Path: $PKG_RELEASE_EL7"
           echo "1404 Package Path: $PKG_RELEASE_1404"
           echo "Release Tag: $RELEASE_TAG"
-          source ~/virtualenv/python2.7/bin/activate
+          # source ~/virtualenv/python2.7/bin/activate
           python --version
           python -m pip install pip==19.0.3
           pip install -Iv tox==3.25.1
