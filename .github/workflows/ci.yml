@@ -21,22 +21,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
         
-      # - name: Set up Python
-      #   uses: actions/setup-python@v2
-      #   with:
-      #     python-version: '2.7'  # Specify Python version
+      # # - name: Set up Python
+      # #   uses: actions/setup-python@v2
+      # #   with:
+      # #     python-version: '2.7'  # Specify Python version
 
-      - name: Set up Python 2
-        run: |
-          # sudo rm -f $(which python) $(which pip)
-          # sudo apt update
-          # sudo apt upgrade
-          # sudo apt install python2.7
-          # python-pip
-          sudo apt update
-          curl https://bootstrap.pypa.io/pip/2.7/get-pip.py --output get-pip.py
-          sudo python2.7 get-pip.py
-          # sudo ln -sf "$(which python2.7)" "$(dirname $(which python2.7))/python"
+      # - name: Set up Python 2
+      #   run: |
+      #     # sudo rm -f $(which python) $(which pip)
+      #     # sudo apt update
+      #     # sudo apt upgrade
+      #     # sudo apt install python2.7
+      #     # python-pip
+      #     sudo apt update
+      #     curl https://bootstrap.pypa.io/pip/2.7/get-pip.py --output get-pip.py
+      #     sudo python2.7 get-pip.py
+      #     # sudo ln -sf "$(which python2.7)" "$(dirname $(which python2.7))/python"
 
       - name: Set Dynamic Environment Variables
         id: set_env_vars
