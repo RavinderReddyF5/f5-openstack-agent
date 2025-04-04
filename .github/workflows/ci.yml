@@ -12,9 +12,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # container: coatldev/six:latest
+    container: coatldev/six:latest
     # container: centos:7
-    container: centos/python-27-centos7
+    # container: centos/python-27-centos7
     env:  # Define static global environment variables
       DIST_REPO: "f5-openstack-agent-dist"
 
@@ -55,7 +55,7 @@ jobs:
           echo "1404 Package Path: $PKG_RELEASE_1404"
           echo "Release Tag: $RELEASE_TAG"
           # source ~/virtualenv/python2.7/bin/activate
-          python --version
+          python2.7 --version
           python -m pip install pip==19.0.3
           pip install -Iv tox==3.25.1
           pip install -Iv tox==3.25.1
