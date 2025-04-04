@@ -12,8 +12,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # container: coatldev/six:latest
-    container: centos:7
+    container: coatldev/six:latest
+    # container: centos:7
     # container: centos/python-27-centos7
     env:  # Define static global environment variables
       DIST_REPO: "f5-openstack-agent-dist"
