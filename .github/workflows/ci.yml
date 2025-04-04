@@ -27,7 +27,8 @@ jobs:
       - name: Set up Python 2
         run: |
           sudo rm -f $(which python) $(which pip)
-          # sudo apt-get install python2.7
+          sudo apt update
+          sudo apt upgrade
           sudo apt install python2.7
           # python-pip
           sudo apt update
