@@ -71,14 +71,13 @@ jobs:
           python2.7 get-pip.py
           # wget https://bootstrap.pypa.io/pip/2.7/get-pip.py
           # python2.7 get-pip.py
-          python2.7 -m ensurepip --default-pip
-          python2.7 -m pip install --upgrade pip setuptools
+          # python2.7 -m pip install --upgrade pip setuptools
           # sudo apt-get install python-setuptools
           # sudo easy_install pip
           # sudo python2.7 setup.py install
           echo "pip version"
-          python2.7 -m pip install pip==19.0.3
           pip --version
+          python2.7 -m pip install pip==19.0.3
           # sudo python setup.py install
           # python2.7 -m pip2 install pip2==19.0.3
           # pip install -Iv tox==3.25.1
