@@ -12,7 +12,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: coatldev/six:latest
+    # container: coatldev/six:latest
     # container: centos:7
     # container: centos/python-27-centos7
     env:  # Define static global environment variables
@@ -27,6 +27,7 @@ jobs:
         id: set_env_vars
         run: |
           # Get package version
+          lsb_release -a
           PKG_VERSION=$(python2.7 -c "import f5_openstack_agent; print(f5_openstack_agent.__version__)")
 
           # Get package release version
