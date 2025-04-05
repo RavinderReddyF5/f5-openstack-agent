@@ -69,8 +69,8 @@ jobs:
           # source ~/virtualenv/python2.7/bin/activate
           curl https://bootstrap.pypa.io/pip/2.7/get-pip.py --output get-pip.py # Fetch get-pip.py for python 2.7 
           python2.7 get-pip.py
-          pip --version
-          python2.7 -m pip install pip==19.0.3
+          pip2 --version
+          python2.7 -m pip install pip2==19.0.3
           
           # python2.7 -m pip2 install pip2==19.0.3
           # pip install -Iv tox==3.25.1
