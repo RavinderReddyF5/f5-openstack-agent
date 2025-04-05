@@ -67,11 +67,13 @@ jobs:
           echo "1404 Package Path: $PKG_RELEASE_1404"
           echo "Release Tag: $RELEASE_TAG"
           # source ~/virtualenv/python2.7/bin/activate
-          curl https://bootstrap.pypa.io/pip/2.7/get-pip.py --output get-pip.py # Fetch get-pip.py for python 2.7 
-          python2.7 get-pip.py
-          pip2 --version
-          python2.7 -m pip install pip2==19.0.3
-          
+          # sudo easy_install pip
+          # curl https://bootstrap.pypa.io/pip/2.7/get-pip.py --output get-pip.py # Fetch get-pip.py for python 2.7 
+          # python2.7 get-pip.py
+          echo "pip version"
+          python2.7 -m pip install pip==19.0.3
+          pip --version
+          # sudo python setup.py install
           # python2.7 -m pip2 install pip2==19.0.3
           # pip install -Iv tox==3.25.1
           # pip install -r requirements.style.txt
