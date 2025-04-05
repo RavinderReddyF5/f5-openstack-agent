@@ -38,10 +38,11 @@ jobs:
         run: |
           # Get package version
           lsb_release -a
-          PKG_VERSION=$(python2.7 -c "import f5_openstack_agent; print(f5_openstack_agent.__version__)")
+          python --version
+          PKG_VERSION=$(python -c "import f5_openstack_agent; print(f5_openstack_agent.__version__)")
 
           # Get package release version
-          PKG_RELEASE=$(python2.7 ${DIST_REPO}/scripts/get-version-release.py --release)
+          PKG_RELEASE=$(python ${DIST_REPO}/scripts/get-version-release.py --release)
 
           # Set other variables based on the above
           echo "PKG_VERSION=${PKG_VERSION}" >> $GITHUB_ENV
@@ -66,10 +67,9 @@ jobs:
           echo "1404 Package Path: $PKG_RELEASE_1404"
           echo "Release Tag: $RELEASE_TAG"
           # source ~/virtualenv/python2.7/bin/activate
-          python2.7 --version
-          python2.7 -m pip install pip2==19.0.3
-          pip2 install -Iv tox==3.25.1
-          pip2 install -r requirements.style.txt
+          python -m pip install pip==19.0.3
+          pip install -Iv tox==3.25.1
+          pip install -r requirements.style.txt
           pep257 ./test/functional/neutronless/esd/test_esd.py
           flake8 --ignore=H304 ./test/functional/neutronless/esd/test_esd.py
           pep257 ./test/functional/neutronless/esd/conftest.py
@@ -78,7 +78,7 @@ jobs:
           flake8 --ignore=H304 ./test/functional/neutronless/esd/test_esd_pairs.py
           flake8 ./f5_openstack_agent
           tox -e unit
-          python2.7 f5-openstack-agent-dist/scripts/universal_truth.py
+          python f5-openstack-agent-dist/scripts/universal_truth.py
           echo "setup.cfg:"
           cat setup.cfg
           echo "stdeb.cfg:"
