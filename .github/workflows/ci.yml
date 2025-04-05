@@ -67,7 +67,7 @@ jobs:
           echo "Release Tag: $RELEASE_TAG"
           # source ~/virtualenv/python2.7/bin/activate
           python2.7 --version
-          python2.7 -m pip install pip==19.0.3
+          python2.7 -m pip install pip2==19.0.3
           pip2 install -Iv tox==3.25.1
           pip2 install -r requirements.style.txt
           pep257 ./test/functional/neutronless/esd/test_esd.py
