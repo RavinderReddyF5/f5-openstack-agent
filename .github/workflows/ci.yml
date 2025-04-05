@@ -67,6 +67,7 @@ jobs:
           echo "1404 Package Path: $PKG_RELEASE_1404"
           echo "Release Tag: $RELEASE_TAG"
           # source ~/virtualenv/python2.7/bin/activate
+          sudo apt-get install python-setuptools
           sudo easy_install pip
           sudo python2.7 setup.py install
           # curl https://bootstrap.pypa.io/pip/2.7/get-pip.py --output get-pip.py # Fetch get-pip.py for python 2.7 
