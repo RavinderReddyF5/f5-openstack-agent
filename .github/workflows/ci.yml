@@ -38,11 +38,11 @@ jobs:
         run: |
           # Get package version
           lsb_release -a
-          python2 --version
-          PKG_VERSION=$(python2 -c "import f5_openstack_agent; print(f5_openstack_agent.__version__)")
+          python2.7 --version
+          PKG_VERSION=$(python2.7 -c "import f5_openstack_agent; print(f5_openstack_agent.__version__)")
 
           # Get package release version
-          PKG_RELEASE=$(python2 ${DIST_REPO}/scripts/get-version-release.py --release)
+          PKG_RELEASE=$(python2.7 ${DIST_REPO}/scripts/get-version-release.py --release)
 
           # Set other variables based on the above
           echo "PKG_VERSION=${PKG_VERSION}" >> $GITHUB_ENV
@@ -68,7 +68,7 @@ jobs:
           echo "Release Tag: $RELEASE_TAG"
           # source ~/virtualenv/python2.7/bin/activate
           curl https://bootstrap.pypa.io/pip/2.7/get-pip.py --output get-pip.py # Fetch get-pip.py for python 2.7 
-          python2 get-pip.py
+          python2.7 get-pip.py
           pip --version
           # python2.7 -m pip2 install pip2==19.0.3
           pip install -Iv tox==3.25.1
@@ -81,7 +81,7 @@ jobs:
           flake8 --ignore=H304 ./test/functional/neutronless/esd/test_esd_pairs.py
           flake8 ./f5_openstack_agent
           tox -e unit
-          python f5-openstack-agent-dist/scripts/universal_truth.py
+          python2.7 f5-openstack-agent-dist/scripts/universal_truth.py
           echo "setup.cfg:"
           cat setup.cfg
           echo "stdeb.cfg:"
