@@ -22,6 +22,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
+
+    # Install Python and Dependencies
+      - name: Setup Python
+        run: |
+          # Get package version
+          lsb_release -a
+          sudo apt update
+          wget http://security.ubuntu.com/ubuntu/pool/universe/p/python2.7/python2.7_2.7.18-13ubuntu1.5_amd64.deb http://security.ubuntu.com/ubuntu/pool/universe/p/python2.7/libpython2.7-stdlib_2.7.18-13ubuntu1.5_amd64.deb http://security.ubuntu.com/ubuntu/pool/universe/p/python2.7/python2.7-minimal_2.7.18-13ubuntu1.5_amd64.deb http://security.ubuntu.com/ubuntu/pool/universe/p/python2.7/libpython2.7-minimal_2.7.18-13ubuntu1.5_amd64.deb  
+          sudo apt install ./libpython2.7-minimal_2.7.18-13ubuntu1.5_amd64.deb ./libpython2.7-stdlib_2.7.18-13ubuntu1.5_amd64.deb ./python2.7-minimal_2.7.18-13ubuntu1.5_amd64.deb ./python2.7_2.7.18-13ubuntu1.5_amd64.deb
+
       - name: Set Dynamic Environment Variables
         # container: centos/python-27-centos7
         id: set_env_vars
@@ -79,6 +89,7 @@ jobs:
           sudo chown -R travis:travis ${DIST_REPO}/deb_dist/*.deb
           f5-openstack-agent-dist/scripts/test_install.sh "redhat" "7" ${PKG_RELEASE_EL7}
           f5-openstack-agent-dist/scripts/test_install.sh "ubuntu" "14.04" ${PKG_RELEASE_1404}
+          
 
       # - name: Set up Python
       #   uses: actions/setup-python@v2
