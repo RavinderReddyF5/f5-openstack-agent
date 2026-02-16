@@ -1,0 +1,243 @@
+name: F5 OpenStack Agent CI
+
+on:
+  push:
+    branches:
+      - '*'
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - '*'
+
+env:
+  DIST_REPO: f5-openstack-agent-dist
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 2.7
+        uses: actions/setup-python@v5
+        with:
+          python-version: '2.7'
+        # Note: Python 2.7 is EOL. Consider upgrading to Python 3.x
+        # If Python 2.7 is unavailable, use a container instead (see alternative below)
+
+      - name: Configure Git
+        run: |
+          git config --global user.email "OpenStack_TravisCI@f5.com"
+          git config --global user.name "Travis F5 Openstack"
+
+      - name: Set environment variables
+        id: vars
+        run: |
+          PKG_VERSION=$(python -c "import f5_openstack_agent; print f5_openstack_agent.__version__")
+          PKG_RELEASE=$(python ${DIST_REPO}/scripts/get-version-release.py --release)
+          echo "PKG_VERSION=${PKG_VERSION}" >> $GITHUB_ENV
+          echo "PKG_RELEASE=${PKG_RELEASE}" >> $GITHUB_ENV
+          echo "PKG_RELEASE_EL7=${DIST_REPO}/rpms/build/f5-openstack-agent-${PKG_VERSION}-${PKG_RELEASE}.el7.noarch.rpm" >> $GITHUB_ENV
+          echo "PKG_RELEASE_1404=${DIST_REPO}/deb_dist/python-f5-openstack-agent_${PKG_VERSION}-${PKG_RELEASE}_1404_all.deb" >> $GITHUB_ENV
+          
+          # Determine CTLR_VERSION based on branch/tag
+          BRANCH_NAME=${GITHUB_REF_NAME}
+          if [[ "$BRANCH_NAME" == *"-stable" ]]; then
+            CTLR_VERSION="v$(echo $BRANCH_NAME | sed 's/-stable//g')"
+          elif [[ "$BRANCH_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]* ]]; then
+            IFS='.' read -ra va <<< "${BRANCH_NAME//v/}"
+            CTLR_VERSION="v${va[0]}.${va[1]}"
+          else
+            CTLR_VERSION="$BRANCH_NAME"
+          fi
+          echo "CTLR_VERSION=${CTLR_VERSION}" >> $GITHUB_ENV
+
+      - name: Pull Docker image
+        run: docker pull f5devcentral/containthedocs:latest
+
+      - name: Install dependencies
+        run: |
+          pip install tox
+          pip install -r requirements.style.txt
+
+      - name: Run pep257 checks
+        run: |
+          pep257 ./test/functional/neutronless/esd/test_esd.py
+          pep257 ./test/functional/neutronless/esd/conftest.py
+          pep257 ./test/functional/neutronless/esd/test_esd_pairs.py
+
+      - name: Run flake8 checks
+        run: |
+          flake8 --ignore=H304 ./test/functional/neutronless/esd/test_esd.py
+          flake8 --ignore=H304 ./test/functional/neutronless/esd/conftest.py
+          flake8 --ignore=H304 ./test/functional/neutronless/esd/test_esd_pairs.py
+          flake8 ./f5_openstack_agent
+
+      - name: Run unit tests
+        run: tox -e unit
+
+      - name: Run universal truth script
+        run: python f5-openstack-agent-dist/scripts/universal_truth.py
+
+      - name: Display config files
+        run: |
+          echo "setup.cfg:"
+          cat setup.cfg
+          echo "stdeb.cfg:"
+          cat f5-openstack-agent-dist/deb_dist/stdeb.cfg
+
+      - name: Build packages
+        run: |
+          f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "7"
+          f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "6"
+          f5-openstack-agent-dist/scripts/package_agent.sh "ubuntu" "14.04"
+
+      - name: Fix permissions
+        run: |
+          sudo chown -R $USER:$USER ${DIST_REPO}/rpms/build
+          sudo chown -R $USER:$USER ${DIST_REPO}/deb_dist/*.deb
+
+      - name: Test package installation
+        run: |
+          f5-openstack-agent-dist/scripts/test_install.sh "redhat" "7" ${{ env.PKG_RELEASE_EL7 }}
+          f5-openstack-agent-dist/scripts/test_install.sh "ubuntu" "14.04" ${{ env.PKG_RELEASE_1404 }}
+
+      - name: Build and test docs
+        run: ./docs/scripts/docker-docs.sh ./docs/scripts/test-docs.sh
+
+      - name: Generate MD5 checksums
+        run: |
+          md5sum ${{ env.PKG_RELEASE_EL7 }} > ${{ env.PKG_RELEASE_EL7 }}.md5
+          md5sum --check ${{ env.PKG_RELEASE_EL7 }}.md5
+          md5sum ${{ env.PKG_RELEASE_1404 }} > ${{ env.PKG_RELEASE_1404 }}.md5
+          md5sum --check ${{ env.PKG_RELEASE_1404 }}.md5
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: |
+            ${{ env.PKG_RELEASE_EL7 }}
+            ${{ env.PKG_RELEASE_EL7 }}.md5
+            ${{ env.PKG_RELEASE_1404 }}
+            ${{ env.PKG_RELEASE_1404 }}.md5
+
+  release:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 2.7
+        uses: actions/setup-python@v5
+        with:
+          python-version: '2.7'
+
+      - name: Set environment variables
+        run: |
+          PKG_VERSION=$(python -c "import f5_openstack_agent; print f5_openstack_agent.__version__")
+          PKG_RELEASE=$(python ${DIST_REPO}/scripts/get-version-release.py --release)
+          echo "PKG_VERSION=${PKG_VERSION}" >> $GITHUB_ENV
+          echo "PKG_RELEASE=${PKG_RELEASE}" >> $GITHUB_ENV
+          echo "PKG_RELEASE_EL7=${DIST_REPO}/rpms/build/f5-openstack-agent-${PKG_VERSION}-${PKG_RELEASE}.el7.noarch.rpm" >> $GITHUB_ENV
+          echo "PKG_RELEASE_1404=${DIST_REPO}/deb_dist/python-f5-openstack-agent_${PKG_VERSION}-${PKG_RELEASE}_1404_all.deb" >> $GITHUB_ENV
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: packages
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{ env.PKG_RELEASE_EL7 }}
+            ${{ env.PKG_RELEASE_EL7 }}.md5
+            ${{ env.PKG_RELEASE_1404 }}
+            ${{ env.PKG_RELEASE_1404 }}.md5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-pypi:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 2.7
+        uses: actions/setup-python@v5
+        with:
+          python-version: '2.7'
+
+      - name: Install build dependencies
+        run: |
+          pip install setuptools wheel twine
+
+      - name: Build distributions
+        run: python setup.py sdist bdist_wheel
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: ${{ secrets.PYPI_USER }}
+          password: ${{ secrets.PYPI_PASSWORD }}
+
+  deploy-docs:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    if: |
+      contains(github.ref_name, '-stable') || 
+      (startsWith(github.ref, 'refs/tags/') && contains(github.ref_name, 'v'))
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set CTLR_VERSION
+        run: |
+          BRANCH_NAME=${GITHUB_REF_NAME}
+          if [[ "$BRANCH_NAME" == *"-stable" ]]; then
+            CTLR_VERSION="v$(echo $BRANCH_NAME | sed 's/-stable//g')"
+          elif [[ "$BRANCH_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]* ]]; then
+            IFS='.' read -ra va <<< "${BRANCH_NAME//v/}"
+            CTLR_VERSION="v${va[0]}.${va[1]}"
+          else
+            CTLR_VERSION="$BRANCH_NAME"
+          fi
+          echo "CTLR_VERSION=${CTLR_VERSION}" >> $GITHUB_ENV
+
+      - name: Deploy docs
+        run: ./build-tools/deploy-docs.sh publish-product-docs-to-prod openstack/agent ${{ env.CTLR_VERSION }}
+
+  notify:
+    needs: [lint-and-test, release, publish-pypi, deploy-docs]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Slack Notification on Success
+        if: ${{ needs.lint-and-test.result == 'success' && (needs.lint-and-test.result != needs.release.result || needs.lint-and-test.result != needs.publish-pypi.result) }}
+        uses: slackapi/slack-github-action@v1.25.0
+        with:
+          channel-id: 'f5-openstack-agent,build_status'
+          slack-message: "✅ Build succeeded for ${{ github.repository }}@${{ github.ref_name }}"
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_TOKEN }}
+
+      - name: Slack Notification on Failure
+        if: ${{ failure() }}
+        uses: slackapi/slack-github-action@v1.25.0
+        with:
+          channel-id: 'f5-openstack-agent,build_status'
+          slack-message: "❌ Build failed for ${{ github.repository }}@${{ github.ref_name }}"
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_TOKEN }}
