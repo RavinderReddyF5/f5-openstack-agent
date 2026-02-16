@@ -49,7 +49,7 @@ jobs:
           git config --global user.name "Travis F5 Openstack"
           git config --global --add safe.directory $GITHUB_WORKSPACE
 
-      - name: Install Python dependencies with pinned versions
+      - name: Install Python dependencies
         run: |
           pip install pip==9.0.3
           pip install setuptools==44.1.1
@@ -107,113 +107,101 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Run universal truth script in Docker
+      - name: Pull build image
+        run: docker pull zhaoqin/f5-openstack-client:latest
+
+      - name: Run universal truth script
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            python:2.7-buster \
-            bash -c '
-              echo "deb http://archive.debian.org/debian buster main" > /etc/apt/sources.list
-              echo "deb http://archive.debian.org/debian-security buster/updates main" >> /etc/apt/sources.list
-              echo "Acquire::Check-Valid-Until \"false\";" > /etc/apt/apt.conf.d/99no-check-valid-until
-              pip install pip==9.0.3 setuptools==44.1.1 > /dev/null 2>&1
-              python f5-openstack-agent-dist/scripts/universal_truth.py
-            '
+            zhaoqin/f5-openstack-client:latest \
+            python f5-openstack-agent-dist/scripts/universal_truth.py
 
       - name: Set environment variables
         id: vars
         run: |
-          PKG_VERSION=$(docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace python:2.7-buster \
-            bash -c '
-              pip install pip==9.0.3 setuptools==44.1.1 > /dev/null 2>&1
-              python -c "import f5_openstack_agent; print f5_openstack_agent.__version__"
-            ')
+          PKG_VERSION=$(docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            zhaoqin/f5-openstack-client:latest \
+            python -c "import f5_openstack_agent; print f5_openstack_agent.__version__")
           
-          PKG_RELEASE=$(docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace python:2.7-buster \
-            bash -c "
-              pip install pip==9.0.3 setuptools==44.1.1 > /dev/null 2>&1
-              python f5-openstack-agent-dist/scripts/get-version-release.py --release
-            ")
+          PKG_RELEASE=$(docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            zhaoqin/f5-openstack-client:latest \
+            python f5-openstack-agent-dist/scripts/get-version-release.py --release)
           
           echo "PKG_VERSION=${PKG_VERSION}" >> $GITHUB_ENV
           echo "PKG_RELEASE=${PKG_RELEASE}" >> $GITHUB_ENV
           echo "PKG_RELEASE_EL7=f5-openstack-agent-dist/rpms/build/f5-openstack-agent-${PKG_VERSION}-${PKG_RELEASE}.el7.noarch.rpm" >> $GITHUB_ENV
           echo "PKG_RELEASE_1404=f5-openstack-agent-dist/deb_dist/python-f5-openstack-agent_${PKG_VERSION}-${PKG_RELEASE}_1404_all.deb" >> $GITHUB_ENV
-
-      - name: Fix CentOS 7 Dockerfile for EOL repositories
-        run: |
-          DOCKERFILE="f5-openstack-agent-dist/Docker/redhat/7/Dockerfile"
-          if [ -f "$DOCKERFILE" ]; then
-            echo "Original Dockerfile:"
-            cat "$DOCKERFILE"
-            echo ""
-            echo "Patching for CentOS 7 EOL..."
-            
-            # Insert vault repo fix after FROM line
-            sed -i '/^FROM centos:7/a \
-            \
-            # CentOS 7 is EOL - switch to vault repositories\
-            RUN sed -i '"'"'s/mirrorlist/#mirrorlist/g'"'"' /etc/yum.repos.d/CentOS-*.repo \&\& \\\
-                sed -i '"'"'s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g'"'"' /etc/yum.repos.d/CentOS-*.repo' "$DOCKERFILE"
-            
-            echo ""
-            echo "Patched Dockerfile:"
-            cat "$DOCKERFILE"
+          
+          BRANCH_NAME=${GITHUB_REF_NAME}
+          if [[ "$BRANCH_NAME" == *"-stable" ]]; then
+            CTLR_VERSION="v$(echo $BRANCH_NAME | sed 's/-stable//g')"
+          elif [[ "$BRANCH_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]* ]]; then
+            IFS='.' read -ra va <<< "${BRANCH_NAME//v/}"
+            CTLR_VERSION="v${va[0]}.${va[1]}"
+          else
+            CTLR_VERSION="$BRANCH_NAME"
           fi
+          echo "CTLR_VERSION=${CTLR_VERSION}" >> $GITHUB_ENV
 
-      - name: Fix CentOS 6 Dockerfile for EOL repositories
+      - name: Display config files
         run: |
-          DOCKERFILE="f5-openstack-agent-dist/Docker/redhat/6/Dockerfile"
-          if [ -f "$DOCKERFILE" ]; then
-            echo "Patching for CentOS 6 EOL..."
-            
-            sed -i '/^FROM centos:6/a \
-            \
-            # CentOS 6 is EOL - switch to vault repositories\
-            RUN sed -i '"'"'s/mirrorlist/#mirrorlist/g'"'"' /etc/yum.repos.d/CentOS-*.repo \&\& \\\
-                sed -i '"'"'s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g'"'"' /etc/yum.repos.d/CentOS-*.repo' "$DOCKERFILE"
-            
-            echo "Patched Dockerfile:"
-            cat "$DOCKERFILE"
-          fi
-
-      - name: Fix Ubuntu 14.04 Dockerfile for EOL repositories
-        run: |
-          DOCKERFILE="f5-openstack-agent-dist/Docker/ubuntu/14.04/Dockerfile"
-          if [ -f "$DOCKERFILE" ]; then
-            echo "Patching for Ubuntu 14.04 EOL..."
-            
-            sed -i '/^FROM ubuntu:14.04/a \
-            \
-            # Ubuntu 14.04 is EOL - switch to old-releases\
-            RUN sed -i '"'"'s/archive.ubuntu.com/old-releases.ubuntu.com/g'"'"' /etc/apt/sources.list \&\& \\\
-                sed -i '"'"'s/security.ubuntu.com/old-releases.ubuntu.com/g'"'"' /etc/apt/sources.list' "$DOCKERFILE"
-            
-            echo "Patched Dockerfile:"
-            cat "$DOCKERFILE"
-          fi
+          echo "setup.cfg:"
+          cat setup.cfg || echo "Not found"
+          echo "stdeb.cfg:"
+          cat f5-openstack-agent-dist/deb_dist/stdeb.cfg || echo "Not found"
+        continue-on-error: true
 
       - name: Build RedHat 7 package
-        run: f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "7"
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            zhaoqin/f5-openstack-client:latest \
+            f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "7"
 
       - name: Build RedHat 6 package
-        run: f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "6"
-        continue-on-error: true  # CentOS 6 may have additional issues
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            zhaoqin/f5-openstack-client:latest \
+            f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "6"
+        continue-on-error: true
 
       - name: Build Ubuntu 14.04 package
-        run: f5-openstack-agent-dist/scripts/package_agent.sh "ubuntu" "14.04"
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            zhaoqin/f5-openstack-client:latest \
+            f5-openstack-agent-dist/scripts/package_agent.sh "ubuntu" "14.04"
 
       - name: Fix permissions
         run: |
           sudo chown -R $USER:$USER f5-openstack-agent-dist/rpms/build || true
-          sudo chown -R $USER:$USER f5-openstack-agent-dist/deb_dist/*.deb || true
+          sudo chown -R $USER:$USER f5-openstack-agent-dist/deb_dist || true
 
       - name: Test RedHat 7 package installation
-        run: f5-openstack-agent-dist/scripts/test_install.sh "redhat" "7" ${{ env.PKG_RELEASE_EL7 }}
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            zhaoqin/f5-openstack-client:latest \
+            f5-openstack-agent-dist/scripts/test_install.sh "redhat" "7" ${{ env.PKG_RELEASE_EL7 }}
 
       - name: Test Ubuntu 14.04 package installation
-        run: f5-openstack-agent-dist/scripts/test_install.sh "ubuntu" "14.04" ${{ env.PKG_RELEASE_1404 }}
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            zhaoqin/f5-openstack-client:latest \
+            f5-openstack-agent-dist/scripts/test_install.sh "ubuntu" "14.04" ${{ env.PKG_RELEASE_1404 }}
 
       - name: Generate MD5 checksums
         run: |
@@ -278,6 +266,58 @@ jobs:
             ./artifacts/debs/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-pypi:
+    needs: [build-packages, build-docs]
+    runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build and publish to PyPI
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            -e TWINE_USERNAME=${{ secrets.PYPI_USER }} \
+            -e TWINE_PASSWORD=${{ secrets.PYPI_PASSWORD }} \
+            python:2.7-buster \
+            bash -c '
+              echo "deb http://archive.debian.org/debian buster main" > /etc/apt/sources.list
+              echo "Acquire::Check-Valid-Until \"false\";" > /etc/apt/apt.conf.d/99no-check-valid-until
+              pip install pip==9.0.3 setuptools==44.1.1 wheel twine==1.15.0
+              python setup.py sdist bdist_wheel
+              twine upload --repository-url https://upload.pypi.org/legacy/ dist/*
+            '
+
+  deploy-docs:
+    needs: [build-packages, build-docs]
+    runs-on: ubuntu-22.04
+    if: |
+      contains(github.ref_name, '-stable') || 
+      (startsWith(github.ref, 'refs/tags/') && contains(github.ref_name, 'v'))
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set CTLR_VERSION
+        run: |
+          BRANCH_NAME=${GITHUB_REF_NAME}
+          if [[ "$BRANCH_NAME" == *"-stable" ]]; then
+            CTLR_VERSION="v$(echo $BRANCH_NAME | sed 's/-stable//g')"
+          elif [[ "$BRANCH_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]* ]]; then
+            IFS='.' read -ra va <<< "${BRANCH_NAME//v/}"
+            CTLR_VERSION="v${va[0]}.${va[1]}"
+          else
+            CTLR_VERSION="$BRANCH_NAME"
+          fi
+          echo "CTLR_VERSION=${CTLR_VERSION}" >> $GITHUB_ENV
+
+      - name: Deploy docs
+        run: ./build-tools/deploy-docs.sh publish-product-docs-to-prod openstack/agent ${{ env.CTLR_VERSION }}
 
   notify:
     needs: [lint-and-unit-test, build-packages, build-docs]
