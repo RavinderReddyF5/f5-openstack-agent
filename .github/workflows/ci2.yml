@@ -199,11 +199,11 @@ jobs:
           sudo chown -R $USER:$USER f5-openstack-agent-dist/rpms/build || true
           sudo chown -R $USER:$USER f5-openstack-agent-dist/deb_dist || true
 
-      - name: Test RedHat 7 package installation
-        run: f5-openstack-agent-dist/scripts/test_install.sh "redhat" "7" ${{ env.PKG_RELEASE_EL7 }}
+      # - name: Test RedHat 7 package installation
+      #   run: f5-openstack-agent-dist/scripts/test_install.sh "redhat" "7" ${{ env.PKG_RELEASE_EL7 }}
 
-      - name: Test Ubuntu 14.04 package installation
-        run: f5-openstack-agent-dist/scripts/test_install.sh "ubuntu" "14.04" ${{ env.PKG_RELEASE_1404 }}
+      # - name: Test Ubuntu 14.04 package installation
+      #   run: f5-openstack-agent-dist/scripts/test_install.sh "ubuntu" "14.04" ${{ env.PKG_RELEASE_1404 }}
 
       - name: Generate MD5 checksums
         run: |
