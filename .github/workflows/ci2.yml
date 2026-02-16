@@ -47,11 +47,29 @@ jobs:
           git config --global user.name "Travis F5 Openstack"
           git config --global --add safe.directory $GITHUB_WORKSPACE
 
-      - name: Install Python dependencies
+      - name: Install Python dependencies with pinned versions
         run: |
+          # Pin pip and setuptools to Python 2.7 compatible versions
           pip install pip==9.0.3
           pip install setuptools==44.1.1
-          pip install tox
+          pip install wheel==0.37.1
+          
+          # Pin problematic packages to Python 2.7 compatible versions
+          pip install lazy-object-proxy==1.4.3
+          pip install wrapt==1.11.2
+          pip install astroid==1.6.6
+          pip install pylint==1.9.5
+          pip install isort==4.3.21
+          pip install typing==3.7.4.3
+          pip install configparser==4.0.2
+          pip install futures==3.3.0
+          pip install funcsigs==1.0.2
+          pip install enum34==1.1.10
+          pip install singledispatch==3.7.0
+          pip install backports.functools-lru-cache==1.6.6
+          
+          # Now install tox and style requirements
+          pip install tox==3.28.0
           pip install -r requirements.style.txt
 
       - name: Run pep257 checks
@@ -88,47 +106,30 @@ jobs:
     outputs:
       pkg_version: ${{ steps.vars.outputs.pkg_version }}
       pkg_release: ${{ steps.vars.outputs.pkg_release }}
-      pkg_release_el7: ${{ steps.vars.outputs.pkg_release_el7 }}
-      pkg_release_1404: ${{ steps.vars.outputs.pkg_release_1404 }}
-      ctlr_version: ${{ steps.vars.outputs.ctlr_version }}
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python 2.7 via Docker
-        run: |
-          # Create a helper script to run Python 2.7 commands
-          cat > /tmp/run-py27.sh << 'EOF'
-          #!/bin/bash
-          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace python:2.7-buster python "$@"
-          EOF
-          chmod +x /tmp/run-py27.sh
-
-      - name: Fix Python 2.7 container repos
-        run: |
-          # Pre-pull and prepare the Python 2.7 image with fixed repos
-          docker run --rm python:2.7-buster bash -c '
-            echo "deb http://archive.debian.org/debian buster main" > /etc/apt/sources.list
-            echo "deb http://archive.debian.org/debian-security buster/updates main" >> /etc/apt/sources.list
-          '
-
       - name: Set environment variables
         id: vars
         run: |
-          # Get version using Python 2.7 container
+          # Get version using Python 2.7 container with pinned packages
           PKG_VERSION=$(docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace python:2.7-buster \
-            python -c "import f5_openstack_agent; print f5_openstack_agent.__version__")
+            bash -c '
+              pip install pip==9.0.3 setuptools==44.1.1 > /dev/null 2>&1
+              python -c "import f5_openstack_agent; print f5_openstack_agent.__version__"
+            ')
           
           PKG_RELEASE=$(docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace python:2.7-buster \
-            python ${DIST_REPO}/scripts/get-version-release.py --release)
+            bash -c "
+              pip install pip==9.0.3 setuptools==44.1.1 > /dev/null 2>&1
+              python ${DIST_REPO}/scripts/get-version-release.py --release
+            ")
           
           echo "pkg_version=${PKG_VERSION}" >> $GITHUB_OUTPUT
           echo "pkg_release=${PKG_RELEASE}" >> $GITHUB_OUTPUT
-          echo "pkg_release_el7=${DIST_REPO}/rpms/build/f5-openstack-agent-${PKG_VERSION}-${PKG_RELEASE}.el7.noarch.rpm" >> $GITHUB_OUTPUT
-          echo "pkg_release_1404=${DIST_REPO}/deb_dist/python-f5-openstack-agent_${PKG_VERSION}-${PKG_RELEASE}_1404_all.deb" >> $GITHUB_OUTPUT
           
-          # Also set as env vars for this job
           echo "PKG_VERSION=${PKG_VERSION}" >> $GITHUB_ENV
           echo "PKG_RELEASE=${PKG_RELEASE}" >> $GITHUB_ENV
           echo "PKG_RELEASE_EL7=${DIST_REPO}/rpms/build/f5-openstack-agent-${PKG_VERSION}-${PKG_RELEASE}.el7.noarch.rpm" >> $GITHUB_ENV
@@ -144,20 +145,16 @@ jobs:
           else
             CTLR_VERSION="$BRANCH_NAME"
           fi
-          echo "ctlr_version=${CTLR_VERSION}" >> $GITHUB_OUTPUT
           echo "CTLR_VERSION=${CTLR_VERSION}" >> $GITHUB_ENV
 
       - name: Build RedHat 7 package
-        run: |
-          f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "7"
+        run: f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "7"
 
       - name: Build RedHat 6 package
-        run: |
-          f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "6"
+        run: f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "6"
 
       - name: Build Ubuntu 14.04 package
-        run: |
-          f5-openstack-agent-dist/scripts/package_agent.sh "ubuntu" "14.04"
+        run: f5-openstack-agent-dist/scripts/package_agent.sh "ubuntu" "14.04"
 
       - name: Fix permissions
         run: |
@@ -165,12 +162,10 @@ jobs:
           sudo chown -R $USER:$USER ${DIST_REPO}/deb_dist/*.deb || true
 
       - name: Test RedHat 7 package installation
-        run: |
-          f5-openstack-agent-dist/scripts/test_install.sh "redhat" "7" ${{ env.PKG_RELEASE_EL7 }}
+        run: f5-openstack-agent-dist/scripts/test_install.sh "redhat" "7" ${{ env.PKG_RELEASE_EL7 }}
 
       - name: Test Ubuntu 14.04 package installation
-        run: |
-          f5-openstack-agent-dist/scripts/test_install.sh "ubuntu" "14.04" ${{ env.PKG_RELEASE_1404 }}
+        run: f5-openstack-agent-dist/scripts/test_install.sh "ubuntu" "14.04" ${{ env.PKG_RELEASE_1404 }}
 
       - name: Generate MD5 checksums
         run: |
@@ -195,7 +190,7 @@ jobs:
             ${{ env.DIST_REPO }}/deb_dist/*.deb
             ${{ env.DIST_REPO }}/deb_dist/*.md5
 
-  # Job 3: Build Documentation (runs on HOST with Docker)
+  # Job 3: Build Documentation
   build-docs:
     runs-on: ubuntu-22.04
     needs: lint-and-unit-test
@@ -210,7 +205,7 @@ jobs:
       - name: Build and test docs
         run: ./docs/scripts/docker-docs.sh ./docs/scripts/test-docs.sh
 
-  # Job 4: Create GitHub Release (on tags only)
+  # Job 4: Create GitHub Release
   release:
     needs: [build-packages, build-docs]
     runs-on: ubuntu-22.04
@@ -229,13 +224,6 @@ jobs:
           name: deb-packages
           path: ./artifacts/debs
 
-      - name: List artifacts
-        run: |
-          echo "RPM packages:"
-          ls -la ./artifacts/rpms/
-          echo "DEB packages:"
-          ls -la ./artifacts/debs/
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -245,7 +233,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Job 5: Publish to PyPI (on tags only)
+  # Job 5: Publish to PyPI
   publish-pypi:
     needs: [build-packages, build-docs]
     runs-on: ubuntu-22.04
@@ -269,8 +257,8 @@ jobs:
               echo "deb http://archive.debian.org/debian-security buster/updates main" >> /etc/apt/sources.list
               echo "Acquire::Check-Valid-Until \"false\";" > /etc/apt/apt.conf.d/99no-check-valid-until
               
-              # Install and build
-              pip install pip==9.0.3 setuptools==44.1.1 wheel twine
+              # Install with pinned versions
+              pip install pip==9.0.3 setuptools==44.1.1 wheel==0.37.1 twine==1.15.0
               python setup.py sdist bdist_wheel
               twine upload --repository-url https://upload.pypi.org/legacy/ dist/*
             '
@@ -288,7 +276,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set CTLR_VERSION
-        id: version
         run: |
           BRANCH_NAME=${GITHUB_REF_NAME}
           if [[ "$BRANCH_NAME" == *"-stable" ]]; then
@@ -325,6 +312,6 @@ jobs:
         uses: slackapi/slack-github-action@v1.25.0
         with:
           channel-id: 'f5-openstack-agent,build_status'
-          slack-message: "❌ Build failed for ${{ github.repository }}@${{ github.ref_name }}\nWorkflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          slack-message: "❌ Build failed for ${{ github.repository }}@${{ github.ref_name }}"
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_TOKEN }}
