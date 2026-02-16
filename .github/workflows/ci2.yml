@@ -89,8 +89,10 @@ jobs:
       #   run: tox -e unit
 
       - name: Run universal truth script
-        run: python f5-openstack-agent-dist/scripts/universal_truth.py
-
+        run: |
+          pip install pip==9.0.3
+          python f5-openstack-agent-dist/scripts/universal_truth.py
+          
       # - name: Display config files
       #   run: |
       #     echo "setup.cfg:"
