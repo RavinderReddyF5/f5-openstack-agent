@@ -121,26 +121,18 @@ jobs:
       - name: Set environment variables
         id: vars
         run: |
-          # Get PKG_VERSION
+          # Get PKG_VERSION using the container
           PKG_VERSION=$(docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             zhaoqin/f5-openstack-client:latest \
             python -c "import f5_openstack_agent; print f5_openstack_agent.__version__")
           
-          # Get PKG_RELEASE - run git commands on HOST, pass result to container
-          # First, try to get git tag info on the host
+          # Get PKG_RELEASE using git on host
           GIT_TAG=$(git describe --tags --exact-match 2>/dev/null || echo "")
-          GIT_DESCRIBE=$(git describe --tags 2>/dev/null || echo "")
-          GIT_BRANCH=${GITHUB_REF_NAME}
-          
-          # Determine PKG_RELEASE based on git info
           if [ -n "$GIT_TAG" ]; then
-            # We're on a tag - release is 1
             PKG_RELEASE="1"
           else
-            # Not on a tag - calculate release number
-            # Get commit count since last tag or use commit hash
             COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "1")
             SHORT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
             PKG_RELEASE="${COMMIT_COUNT}.${SHORT_SHA}"
@@ -166,49 +158,41 @@ jobs:
           echo "Computed values:"
           echo "  PKG_VERSION: ${PKG_VERSION}"
           echo "  PKG_RELEASE: ${PKG_RELEASE}"
-          echo "  CTLR_VERSION: ${CTLR_VERSION}"
 
-      - name: Display config files
+      - name: Fix CentOS 7 Dockerfile for EOL repositories
         run: |
-          echo "setup.cfg:"
-          cat setup.cfg || echo "Not found"
-          echo "stdeb.cfg:"
-          cat f5-openstack-agent-dist/deb_dist/stdeb.cfg || echo "Not found"
-        continue-on-error: true
+          DOCKERFILE="f5-openstack-agent-dist/Docker/redhat/7/Dockerfile"
+          if [ -f "$DOCKERFILE" ]; then
+            # Insert repo fix after FROM line
+            sed -i '/^FROM centos:7/a \\n# CentOS 7 is EOL - switch to vault repositories\nRUN sed -i '"'"'s/mirrorlist/#mirrorlist/g'"'"' /etc/yum.repos.d/CentOS-*.repo && \\\n    sed -i '"'"'s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g'"'"' /etc/yum.repos.d/CentOS-*.repo\n' "$DOCKERFILE"
+            echo "Patched Dockerfile:"
+            cat "$DOCKERFILE"
+          fi
 
+      - name: Fix CentOS 6 Dockerfile for EOL repositories
+        run: |
+          DOCKERFILE="f5-openstack-agent-dist/Docker/redhat/6/Dockerfile"
+          if [ -f "$DOCKERFILE" ]; then
+            sed -i '/^FROM centos:6/a \\n# CentOS 6 is EOL - switch to vault repositories\nRUN sed -i '"'"'s/mirrorlist/#mirrorlist/g'"'"' /etc/yum.repos.d/CentOS-*.repo && \\\n    sed -i '"'"'s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g'"'"' /etc/yum.repos.d/CentOS-*.repo\n' "$DOCKERFILE"
+          fi
+
+      - name: Fix Ubuntu 14.04 Dockerfile for EOL repositories
+        run: |
+          DOCKERFILE="f5-openstack-agent-dist/Docker/ubuntu/14.04/Dockerfile"
+          if [ -f "$DOCKERFILE" ]; then
+            sed -i '/^FROM ubuntu:14.04/a \\n# Ubuntu 14.04 is EOL - switch to old-releases\nRUN sed -i '"'"'s/archive.ubuntu.com/old-releases.ubuntu.com/g'"'"' /etc/apt/sources.list && \\\n    sed -i '"'"'s/security.ubuntu.com/old-releases.ubuntu.com/g'"'"' /etc/apt/sources.list\n' "$DOCKERFILE"
+          fi
+
+      # Run package_agent.sh directly on HOST (not inside container)
       - name: Build RedHat 7 package
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -w /workspace \
-            -e PKG_VERSION=${{ env.PKG_VERSION }} \
-            -e PKG_RELEASE=${{ env.PKG_RELEASE }} \
-            zhaoqin/f5-openstack-client:latest \
-            f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "7"
+        run: f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "7"
 
       - name: Build RedHat 6 package
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -w /workspace \
-            -e PKG_VERSION=${{ env.PKG_VERSION }} \
-            -e PKG_RELEASE=${{ env.PKG_RELEASE }} \
-            zhaoqin/f5-openstack-client:latest \
-            f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "6"
+        run: f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "6"
         continue-on-error: true
 
       - name: Build Ubuntu 14.04 package
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -w /workspace \
-            -e PKG_VERSION=${{ env.PKG_VERSION }} \
-            -e PKG_RELEASE=${{ env.PKG_RELEASE }} \
-            zhaoqin/f5-openstack-client:latest \
-            f5-openstack-agent-dist/scripts/package_agent.sh "ubuntu" "14.04"
+        run: f5-openstack-agent-dist/scripts/package_agent.sh "ubuntu" "14.04"
 
       - name: Fix permissions
         run: |
@@ -216,22 +200,10 @@ jobs:
           sudo chown -R $USER:$USER f5-openstack-agent-dist/deb_dist || true
 
       - name: Test RedHat 7 package installation
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -w /workspace \
-            zhaoqin/f5-openstack-client:latest \
-            f5-openstack-agent-dist/scripts/test_install.sh "redhat" "7" ${{ env.PKG_RELEASE_EL7 }}
+        run: f5-openstack-agent-dist/scripts/test_install.sh "redhat" "7" ${{ env.PKG_RELEASE_EL7 }}
 
       - name: Test Ubuntu 14.04 package installation
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -w /workspace \
-            zhaoqin/f5-openstack-client:latest \
-            f5-openstack-agent-dist/scripts/test_install.sh "ubuntu" "14.04" ${{ env.PKG_RELEASE_1404 }}
+        run: f5-openstack-agent-dist/scripts/test_install.sh "ubuntu" "14.04" ${{ env.PKG_RELEASE_1404 }}
 
       - name: Generate MD5 checksums
         run: |
@@ -313,11 +285,9 @@ jobs:
             -w /workspace \
             -e TWINE_USERNAME=${{ secrets.PYPI_USER }} \
             -e TWINE_PASSWORD=${{ secrets.PYPI_PASSWORD }} \
-            python:2.7-buster \
+            zhaoqin/f5-openstack-client:latest \
             bash -c '
-              echo "deb http://archive.debian.org/debian buster main" > /etc/apt/sources.list
-              echo "Acquire::Check-Valid-Until \"false\";" > /etc/apt/apt.conf.d/99no-check-valid-until
-              pip install pip==9.0.3 setuptools==44.1.1 wheel twine==1.15.0
+              pip install twine wheel
               python setup.py sdist bdist_wheel
               twine upload --repository-url https://upload.pypi.org/legacy/ dist/*
             '
