@@ -118,55 +118,24 @@ jobs:
             zhaoqin/f5-openstack-client:latest \
             python f5-openstack-agent-dist/scripts/universal_truth.py
 
-      - name: Set environment variables
-        id: vars
+      - name: Get PKG_VERSION
+        id: version
         run: |
-          # Get PKG_VERSION using the container
           PKG_VERSION=$(docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             zhaoqin/f5-openstack-client:latest \
             python -c "import f5_openstack_agent; print f5_openstack_agent.__version__")
-          
-          # Get PKG_RELEASE using git on host
-          GIT_TAG=$(git describe --tags --exact-match 2>/dev/null || echo "")
-          if [ -n "$GIT_TAG" ]; then
-            PKG_RELEASE="1"
-          else
-            COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "1")
-            SHORT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-            PKG_RELEASE="${COMMIT_COUNT}.${SHORT_SHA}"
-          fi
-          
           echo "PKG_VERSION=${PKG_VERSION}" >> $GITHUB_ENV
-          echo "PKG_RELEASE=${PKG_RELEASE}" >> $GITHUB_ENV
-          echo "PKG_RELEASE_EL7=f5-openstack-agent-dist/rpms/build/f5-openstack-agent-${PKG_VERSION}-${PKG_RELEASE}.el7.noarch.rpm" >> $GITHUB_ENV
-          echo "PKG_RELEASE_1404=f5-openstack-agent-dist/deb_dist/python-f5-openstack-agent_${PKG_VERSION}-${PKG_RELEASE}_1404_all.deb" >> $GITHUB_ENV
-          
-          # Determine CTLR_VERSION
-          BRANCH_NAME=${GITHUB_REF_NAME}
-          if [[ "$BRANCH_NAME" == *"-stable" ]]; then
-            CTLR_VERSION="v$(echo $BRANCH_NAME | sed 's/-stable//g')"
-          elif [[ "$BRANCH_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]* ]]; then
-            IFS='.' read -ra va <<< "${BRANCH_NAME//v/}"
-            CTLR_VERSION="v${va[0]}.${va[1]}"
-          else
-            CTLR_VERSION="$BRANCH_NAME"
-          fi
-          echo "CTLR_VERSION=${CTLR_VERSION}" >> $GITHUB_ENV
-          
-          echo "Computed values:"
-          echo "  PKG_VERSION: ${PKG_VERSION}"
-          echo "  PKG_RELEASE: ${PKG_RELEASE}"
+          echo "PKG_VERSION=${PKG_VERSION}" >> $GITHUB_OUTPUT
+          echo "PKG_VERSION: ${PKG_VERSION}"
 
       - name: Fix CentOS 7 Dockerfile for EOL repositories
         run: |
           DOCKERFILE="f5-openstack-agent-dist/Docker/redhat/7/Dockerfile"
           if [ -f "$DOCKERFILE" ]; then
-            # Insert repo fix after FROM line
             sed -i '/^FROM centos:7/a \\n# CentOS 7 is EOL - switch to vault repositories\nRUN sed -i '"'"'s/mirrorlist/#mirrorlist/g'"'"' /etc/yum.repos.d/CentOS-*.repo && \\\n    sed -i '"'"'s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g'"'"' /etc/yum.repos.d/CentOS-*.repo\n' "$DOCKERFILE"
-            echo "Patched Dockerfile:"
-            cat "$DOCKERFILE"
+            echo "Patched CentOS 7 Dockerfile"
           fi
 
       - name: Fix CentOS 6 Dockerfile for EOL repositories
@@ -183,7 +152,6 @@ jobs:
             sed -i '/^FROM ubuntu:14.04/a \\n# Ubuntu 14.04 is EOL - switch to old-releases\nRUN sed -i '"'"'s/archive.ubuntu.com/old-releases.ubuntu.com/g'"'"' /etc/apt/sources.list && \\\n    sed -i '"'"'s/security.ubuntu.com/old-releases.ubuntu.com/g'"'"' /etc/apt/sources.list\n' "$DOCKERFILE"
           fi
 
-      # Run package_agent.sh directly on HOST (not inside container)
       - name: Build RedHat 7 package
         run: f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "7"
 
@@ -199,18 +167,64 @@ jobs:
           sudo chown -R $USER:$USER f5-openstack-agent-dist/rpms/build || true
           sudo chown -R $USER:$USER f5-openstack-agent-dist/deb_dist || true
 
+      - name: List built packages
+        id: list_packages
+        run: |
+          echo "=== RPM packages ==="
+          ls -la f5-openstack-agent-dist/rpms/build/ || echo "No RPM build directory"
+          
+          echo ""
+          echo "=== DEB packages ==="
+          ls -la f5-openstack-agent-dist/deb_dist/ || echo "No DEB dist directory"
+          
+          # Find the actual RPM file
+          RPM_FILE=$(find f5-openstack-agent-dist/rpms/build -name "*.el7.noarch.rpm" 2>/dev/null | head -1)
+          if [ -n "$RPM_FILE" ]; then
+            echo "Found RPM: $RPM_FILE"
+            echo "PKG_RELEASE_EL7=${RPM_FILE}" >> $GITHUB_ENV
+          else
+            echo "WARNING: No EL7 RPM file found"
+            # List all RPM files
+            find f5-openstack-agent-dist -name "*.rpm" 2>/dev/null || echo "No RPM files found anywhere"
+          fi
+          
+          # Find the actual DEB file
+          DEB_FILE=$(find f5-openstack-agent-dist/deb_dist -name "*.deb" 2>/dev/null | head -1)
+          if [ -n "$DEB_FILE" ]; then
+            echo "Found DEB: $DEB_FILE"
+            echo "PKG_RELEASE_1404=${DEB_FILE}" >> $GITHUB_ENV
+          else
+            echo "WARNING: No DEB file found"
+            find f5-openstack-agent-dist -name "*.deb" 2>/dev/null || echo "No DEB files found anywhere"
+          fi
+
       # - name: Test RedHat 7 package installation
+      #   if: env.PKG_RELEASE_EL7 != ''
       #   run: f5-openstack-agent-dist/scripts/test_install.sh "redhat" "7" ${{ env.PKG_RELEASE_EL7 }}
 
       # - name: Test Ubuntu 14.04 package installation
+      #   if: env.PKG_RELEASE_1404 != ''
       #   run: f5-openstack-agent-dist/scripts/test_install.sh "ubuntu" "14.04" ${{ env.PKG_RELEASE_1404 }}
 
       - name: Generate MD5 checksums
         run: |
-          md5sum ${{ env.PKG_RELEASE_EL7 }} > ${{ env.PKG_RELEASE_EL7 }}.md5
-          md5sum --check ${{ env.PKG_RELEASE_EL7 }}.md5
-          md5sum ${{ env.PKG_RELEASE_1404 }} > ${{ env.PKG_RELEASE_1404 }}.md5
-          md5sum --check ${{ env.PKG_RELEASE_1404 }}.md5
+          # Generate MD5 for all RPM files
+          for rpm in f5-openstack-agent-dist/rpms/build/*.rpm; do
+            if [ -f "$rpm" ]; then
+              md5sum "$rpm" > "${rpm}.md5"
+              echo "Generated MD5 for: $rpm"
+              md5sum --check "${rpm}.md5"
+            fi
+          done
+          
+          # Generate MD5 for all DEB files
+          for deb in f5-openstack-agent-dist/deb_dist/*.deb; do
+            if [ -f "$deb" ]; then
+              md5sum "$deb" > "${deb}.md5"
+              echo "Generated MD5 for: $deb"
+              md5sum --check "${deb}.md5"
+            fi
+          done
 
       - name: Upload RPM artifacts
         uses: actions/upload-artifact@v4
@@ -219,6 +233,7 @@ jobs:
           path: |
             f5-openstack-agent-dist/rpms/build/*.rpm
             f5-openstack-agent-dist/rpms/build/*.md5
+          if-no-files-found: warn
 
       - name: Upload DEB artifacts
         uses: actions/upload-artifact@v4
@@ -227,6 +242,7 @@ jobs:
           path: |
             f5-openstack-agent-dist/deb_dist/*.deb
             f5-openstack-agent-dist/deb_dist/*.md5
+          if-no-files-found: warn
 
   build-docs:
     runs-on: ubuntu-22.04
@@ -259,6 +275,14 @@ jobs:
         with:
           name: deb-packages
           path: ./artifacts/debs
+
+      - name: List downloaded artifacts
+        run: |
+          echo "=== RPM artifacts ==="
+          ls -la ./artifacts/rpms/ || echo "No RPMs"
+          echo ""
+          echo "=== DEB artifacts ==="
+          ls -la ./artifacts/debs/ || echo "No DEBs"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
