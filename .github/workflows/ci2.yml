@@ -38,21 +38,6 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Clone dist repository if missing
-        run: |
-          if [ ! -d "f5-openstack-agent-dist" ]; then
-            echo "Cloning f5-openstack-agent-dist repository..."
-            apt-get update && apt-get install -y git
-            git clone https://github.com/F5Networks/f5-openstack-agent-dist.git f5-openstack-agent-dist || true
-          fi
-          
-          # List contents to verify
-          echo "Repository structure:"
-          ls -la
-          echo ""
-          echo "Dist repo contents:"
-          ls -la f5-openstack-agent-dist/ || echo "Dist repo not found"
-
       - name: Install system dependencies
         run: |
           apt-get update
@@ -69,8 +54,6 @@ jobs:
           pip install pip==9.0.3
           pip install setuptools==44.1.1
           pip install wheel==0.37.1
-          
-          # Pin problematic packages
           pip install lazy-object-proxy==1.4.3
           pip install wrapt==1.11.2
           pip install astroid==1.6.6
@@ -83,7 +66,6 @@ jobs:
           pip install enum34==1.1.10
           pip install singledispatch==3.7.0
           pip install backports.functools-lru-cache==1.6.6
-          
           pip install tox==3.28.0
           pip install -r requirements.style.txt
 
@@ -104,35 +86,15 @@ jobs:
       #   run: tox -e unit
 
       - name: Run universal truth script
-        run: |
-          echo "Running universal_truth.py..."
-          python f5-openstack-agent-dist/scripts/universal_truth.py
-          echo ""
-          echo "Files created/modified:"
-          ls -la setup.cfg 2>/dev/null || echo "setup.cfg not created"
-          ls -la setup.py 2>/dev/null || echo "setup.py not found"
+        run: python f5-openstack-agent-dist/scripts/universal_truth.py
 
       - name: Display config files
         run: |
-          echo "========== setup.cfg =========="
-          if [ -f setup.cfg ]; then
-            cat setup.cfg
-          else
-            echo "WARNING: setup.cfg not found in $(pwd)"
-            echo "Searching for setup.cfg..."
-            find . -name "setup.cfg" -type f 2>/dev/null | head -5
-          fi
-          
-          echo ""
-          echo "========== stdeb.cfg =========="
-          if [ -f f5-openstack-agent-dist/deb_dist/stdeb.cfg ]; then
-            cat f5-openstack-agent-dist/deb_dist/stdeb.cfg
-          else
-            echo "WARNING: stdeb.cfg not found"
-            echo "Searching for stdeb.cfg..."
-            find . -name "stdeb.cfg" -type f 2>/dev/null | head -5
-          fi
-        continue-on-error: true  # Don't fail the build if files don't exist
+          echo "setup.cfg:"
+          cat setup.cfg || echo "Not found"
+          echo "stdeb.cfg:"
+          cat f5-openstack-agent-dist/deb_dist/stdeb.cfg || echo "Not found"
+        continue-on-error: true
 
   build-packages:
     runs-on: ubuntu-22.04
@@ -144,12 +106,6 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
-
-      - name: Clone dist repository if missing
-        run: |
-          if [ ! -d "f5-openstack-agent-dist" ]; then
-            git clone https://github.com/F5Networks/f5-openstack-agent-dist.git f5-openstack-agent-dist || true
-          fi
 
       - name: Run universal truth script in Docker
         run: |
@@ -185,20 +141,65 @@ jobs:
           echo "PKG_RELEASE_EL7=f5-openstack-agent-dist/rpms/build/f5-openstack-agent-${PKG_VERSION}-${PKG_RELEASE}.el7.noarch.rpm" >> $GITHUB_ENV
           echo "PKG_RELEASE_1404=f5-openstack-agent-dist/deb_dist/python-f5-openstack-agent_${PKG_VERSION}-${PKG_RELEASE}_1404_all.deb" >> $GITHUB_ENV
 
-      - name: Display config files
+      - name: Fix CentOS 7 Dockerfile for EOL repositories
         run: |
-          echo "========== setup.cfg =========="
-          cat setup.cfg || echo "Not found"
-          echo ""
-          echo "========== stdeb.cfg =========="
-          cat f5-openstack-agent-dist/deb_dist/stdeb.cfg || echo "Not found"
-        continue-on-error: true
+          DOCKERFILE="f5-openstack-agent-dist/Docker/redhat/7/Dockerfile"
+          if [ -f "$DOCKERFILE" ]; then
+            echo "Original Dockerfile:"
+            cat "$DOCKERFILE"
+            echo ""
+            echo "Patching for CentOS 7 EOL..."
+            
+            # Insert vault repo fix after FROM line
+            sed -i '/^FROM centos:7/a \
+            \
+            # CentOS 7 is EOL - switch to vault repositories\
+            RUN sed -i '"'"'s/mirrorlist/#mirrorlist/g'"'"' /etc/yum.repos.d/CentOS-*.repo \&\& \\\
+                sed -i '"'"'s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g'"'"' /etc/yum.repos.d/CentOS-*.repo' "$DOCKERFILE"
+            
+            echo ""
+            echo "Patched Dockerfile:"
+            cat "$DOCKERFILE"
+          fi
+
+      - name: Fix CentOS 6 Dockerfile for EOL repositories
+        run: |
+          DOCKERFILE="f5-openstack-agent-dist/Docker/redhat/6/Dockerfile"
+          if [ -f "$DOCKERFILE" ]; then
+            echo "Patching for CentOS 6 EOL..."
+            
+            sed -i '/^FROM centos:6/a \
+            \
+            # CentOS 6 is EOL - switch to vault repositories\
+            RUN sed -i '"'"'s/mirrorlist/#mirrorlist/g'"'"' /etc/yum.repos.d/CentOS-*.repo \&\& \\\
+                sed -i '"'"'s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g'"'"' /etc/yum.repos.d/CentOS-*.repo' "$DOCKERFILE"
+            
+            echo "Patched Dockerfile:"
+            cat "$DOCKERFILE"
+          fi
+
+      - name: Fix Ubuntu 14.04 Dockerfile for EOL repositories
+        run: |
+          DOCKERFILE="f5-openstack-agent-dist/Docker/ubuntu/14.04/Dockerfile"
+          if [ -f "$DOCKERFILE" ]; then
+            echo "Patching for Ubuntu 14.04 EOL..."
+            
+            sed -i '/^FROM ubuntu:14.04/a \
+            \
+            # Ubuntu 14.04 is EOL - switch to old-releases\
+            RUN sed -i '"'"'s/archive.ubuntu.com/old-releases.ubuntu.com/g'"'"' /etc/apt/sources.list \&\& \\\
+                sed -i '"'"'s/security.ubuntu.com/old-releases.ubuntu.com/g'"'"' /etc/apt/sources.list' "$DOCKERFILE"
+            
+            echo "Patched Dockerfile:"
+            cat "$DOCKERFILE"
+          fi
 
       - name: Build RedHat 7 package
         run: f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "7"
 
       - name: Build RedHat 6 package
         run: f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "6"
+        continue-on-error: true  # CentOS 6 may have additional issues
 
       - name: Build Ubuntu 14.04 package
         run: f5-openstack-agent-dist/scripts/package_agent.sh "ubuntu" "14.04"
