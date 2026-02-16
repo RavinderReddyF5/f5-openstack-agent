@@ -121,23 +121,37 @@ jobs:
       - name: Set environment variables
         id: vars
         run: |
+          # Get PKG_VERSION
           PKG_VERSION=$(docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             zhaoqin/f5-openstack-client:latest \
             python -c "import f5_openstack_agent; print f5_openstack_agent.__version__")
           
-          PKG_RELEASE=$(docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            zhaoqin/f5-openstack-client:latest \
-            python f5-openstack-agent-dist/scripts/get-version-release.py --release)
+          # Get PKG_RELEASE - run git commands on HOST, pass result to container
+          # First, try to get git tag info on the host
+          GIT_TAG=$(git describe --tags --exact-match 2>/dev/null || echo "")
+          GIT_DESCRIBE=$(git describe --tags 2>/dev/null || echo "")
+          GIT_BRANCH=${GITHUB_REF_NAME}
+          
+          # Determine PKG_RELEASE based on git info
+          if [ -n "$GIT_TAG" ]; then
+            # We're on a tag - release is 1
+            PKG_RELEASE="1"
+          else
+            # Not on a tag - calculate release number
+            # Get commit count since last tag or use commit hash
+            COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "1")
+            SHORT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+            PKG_RELEASE="${COMMIT_COUNT}.${SHORT_SHA}"
+          fi
           
           echo "PKG_VERSION=${PKG_VERSION}" >> $GITHUB_ENV
           echo "PKG_RELEASE=${PKG_RELEASE}" >> $GITHUB_ENV
           echo "PKG_RELEASE_EL7=f5-openstack-agent-dist/rpms/build/f5-openstack-agent-${PKG_VERSION}-${PKG_RELEASE}.el7.noarch.rpm" >> $GITHUB_ENV
           echo "PKG_RELEASE_1404=f5-openstack-agent-dist/deb_dist/python-f5-openstack-agent_${PKG_VERSION}-${PKG_RELEASE}_1404_all.deb" >> $GITHUB_ENV
           
+          # Determine CTLR_VERSION
           BRANCH_NAME=${GITHUB_REF_NAME}
           if [[ "$BRANCH_NAME" == *"-stable" ]]; then
             CTLR_VERSION="v$(echo $BRANCH_NAME | sed 's/-stable//g')"
@@ -148,6 +162,11 @@ jobs:
             CTLR_VERSION="$BRANCH_NAME"
           fi
           echo "CTLR_VERSION=${CTLR_VERSION}" >> $GITHUB_ENV
+          
+          echo "Computed values:"
+          echo "  PKG_VERSION: ${PKG_VERSION}"
+          echo "  PKG_RELEASE: ${PKG_RELEASE}"
+          echo "  CTLR_VERSION: ${CTLR_VERSION}"
 
       - name: Display config files
         run: |
@@ -161,7 +180,10 @@ jobs:
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
+            -v /var/run/docker.sock:/var/run/docker.sock \
             -w /workspace \
+            -e PKG_VERSION=${{ env.PKG_VERSION }} \
+            -e PKG_RELEASE=${{ env.PKG_RELEASE }} \
             zhaoqin/f5-openstack-client:latest \
             f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "7"
 
@@ -169,7 +191,10 @@ jobs:
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
+            -v /var/run/docker.sock:/var/run/docker.sock \
             -w /workspace \
+            -e PKG_VERSION=${{ env.PKG_VERSION }} \
+            -e PKG_RELEASE=${{ env.PKG_RELEASE }} \
             zhaoqin/f5-openstack-client:latest \
             f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "6"
         continue-on-error: true
@@ -178,7 +203,10 @@ jobs:
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
+            -v /var/run/docker.sock:/var/run/docker.sock \
             -w /workspace \
+            -e PKG_VERSION=${{ env.PKG_VERSION }} \
+            -e PKG_RELEASE=${{ env.PKG_RELEASE }} \
             zhaoqin/f5-openstack-client:latest \
             f5-openstack-agent-dist/scripts/package_agent.sh "ubuntu" "14.04"
 
@@ -191,6 +219,7 @@ jobs:
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
+            -v /var/run/docker.sock:/var/run/docker.sock \
             -w /workspace \
             zhaoqin/f5-openstack-client:latest \
             f5-openstack-agent-dist/scripts/test_install.sh "redhat" "7" ${{ env.PKG_RELEASE_EL7 }}
@@ -199,6 +228,7 @@ jobs:
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
+            -v /var/run/docker.sock:/var/run/docker.sock \
             -w /workspace \
             zhaoqin/f5-openstack-client:latest \
             f5-openstack-agent-dist/scripts/test_install.sh "ubuntu" "14.04" ${{ env.PKG_RELEASE_1404 }}
