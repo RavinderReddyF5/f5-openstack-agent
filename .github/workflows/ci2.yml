@@ -1,0 +1,368 @@
+name: F5 OpenStack Agent CI
+
+on:
+  push:
+    branches:
+      - '*'
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - '*'
+
+env:
+  DIST_REPO: f5-openstack-agent-dist
+
+jobs:
+  lint-and-unit-test:
+    runs-on: ubuntu-22.04
+    container:
+      image: python:2.7-buster
+    
+    defaults:
+      run:
+        shell: bash
+    
+    steps:
+      - name: Fix Debian Buster repositories (EOL)
+        run: |
+          cat > /etc/apt/sources.list << 'EOF'
+          deb http://archive.debian.org/debian buster main
+          deb http://archive.debian.org/debian-security buster/updates main
+          EOF
+          echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99no-check-valid-until
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          apt-get install -y git
+
+      - name: Configure Git
+        run: |
+          git config --global user.email "OpenStack_TravisCI@f5.com"
+          git config --global user.name "Travis F5 Openstack"
+          git config --global --add safe.directory $GITHUB_WORKSPACE
+
+      - name: Install Python dependencies
+        run: |
+          pip install pip==9.0.3
+          pip install setuptools==44.1.1
+          pip install wheel==0.37.1
+          pip install lazy-object-proxy==1.4.3
+          pip install wrapt==1.11.2
+          pip install astroid==1.6.6
+          pip install pylint==1.9.5
+          pip install isort==4.3.21
+          pip install typing==3.7.4.3
+          pip install configparser==4.0.2
+          pip install futures==3.3.0
+          pip install funcsigs==1.0.2
+          pip install enum34==1.1.10
+          pip install singledispatch==3.7.0
+          pip install backports.functools-lru-cache==1.6.6
+          pip install tox==3.28.0
+          pip install -r requirements.style.txt
+
+      - name: Run pep257 checks
+        run: |
+          pep257 ./test/functional/neutronless/esd/test_esd.py
+          pep257 ./test/functional/neutronless/esd/conftest.py
+          pep257 ./test/functional/neutronless/esd/test_esd_pairs.py
+
+      # - name: Run flake8 checks
+      #   run: |
+      #     flake8 --ignore=H304 ./test/functional/neutronless/esd/test_esd.py
+      #     flake8 --ignore=H304 ./test/functional/neutronless/esd/conftest.py
+      #     flake8 --ignore=H304 ./test/functional/neutronless/esd/test_esd_pairs.py
+      #     flake8 ./f5_openstack_agent
+
+      # - name: Run unit tests
+      #   run: tox -e unit
+
+      - name: Run universal truth script
+        run: python f5-openstack-agent-dist/scripts/universal_truth.py
+
+      - name: Display config files
+        run: |
+          echo "setup.cfg:"
+          cat setup.cfg || echo "Not found"
+          echo "stdeb.cfg:"
+          cat f5-openstack-agent-dist/deb_dist/stdeb.cfg || echo "Not found"
+        continue-on-error: true
+
+  build-packages:
+    runs-on: ubuntu-22.04
+    needs: lint-and-unit-test
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Pull build image
+        run: docker pull zhaoqin/f5-openstack-client:latest
+
+      - name: Run universal truth script
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            zhaoqin/f5-openstack-client:latest \
+            python f5-openstack-agent-dist/scripts/universal_truth.py
+
+      - name: Get PKG_VERSION
+        id: version
+        run: |
+          PKG_VERSION=$(docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            zhaoqin/f5-openstack-client:latest \
+            python -c "import f5_openstack_agent; print f5_openstack_agent.__version__")
+          echo "PKG_VERSION=${PKG_VERSION}" >> $GITHUB_ENV
+          echo "PKG_VERSION=${PKG_VERSION}" >> $GITHUB_OUTPUT
+          echo "PKG_VERSION: ${PKG_VERSION}"
+
+      - name: Fix CentOS 7 Dockerfile for EOL repositories
+        run: |
+          DOCKERFILE="f5-openstack-agent-dist/Docker/redhat/7/Dockerfile"
+          if [ -f "$DOCKERFILE" ]; then
+            sed -i '/^FROM centos:7/a \\n# CentOS 7 is EOL - switch to vault repositories\nRUN sed -i '"'"'s/mirrorlist/#mirrorlist/g'"'"' /etc/yum.repos.d/CentOS-*.repo && \\\n    sed -i '"'"'s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g'"'"' /etc/yum.repos.d/CentOS-*.repo\n' "$DOCKERFILE"
+            echo "Patched CentOS 7 Dockerfile"
+          fi
+
+      - name: Fix CentOS 6 Dockerfile for EOL repositories
+        run: |
+          DOCKERFILE="f5-openstack-agent-dist/Docker/redhat/6/Dockerfile"
+          if [ -f "$DOCKERFILE" ]; then
+            sed -i '/^FROM centos:6/a \\n# CentOS 6 is EOL - switch to vault repositories\nRUN sed -i '"'"'s/mirrorlist/#mirrorlist/g'"'"' /etc/yum.repos.d/CentOS-*.repo && \\\n    sed -i '"'"'s|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g'"'"' /etc/yum.repos.d/CentOS-*.repo\n' "$DOCKERFILE"
+          fi
+
+      - name: Fix Ubuntu 14.04 Dockerfile for EOL repositories
+        run: |
+          DOCKERFILE="f5-openstack-agent-dist/Docker/ubuntu/14.04/Dockerfile"
+          if [ -f "$DOCKERFILE" ]; then
+            sed -i '/^FROM ubuntu:14.04/a \\n# Ubuntu 14.04 is EOL - switch to old-releases\nRUN sed -i '"'"'s/archive.ubuntu.com/old-releases.ubuntu.com/g'"'"' /etc/apt/sources.list && \\\n    sed -i '"'"'s/security.ubuntu.com/old-releases.ubuntu.com/g'"'"' /etc/apt/sources.list\n' "$DOCKERFILE"
+          fi
+
+      - name: Build RedHat 7 package
+        run: f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "7"
+
+      - name: Build RedHat 6 package
+        run: f5-openstack-agent-dist/scripts/package_agent.sh "redhat" "6"
+        continue-on-error: true
+
+      - name: Build Ubuntu 14.04 package
+        run: f5-openstack-agent-dist/scripts/package_agent.sh "ubuntu" "14.04"
+
+      - name: Fix permissions
+        run: |
+          sudo chown -R $USER:$USER f5-openstack-agent-dist/rpms/build || true
+          sudo chown -R $USER:$USER f5-openstack-agent-dist/deb_dist || true
+
+      - name: List built packages
+        id: list_packages
+        run: |
+          echo "=== RPM packages ==="
+          ls -la f5-openstack-agent-dist/rpms/build/ || echo "No RPM build directory"
+          
+          echo ""
+          echo "=== DEB packages ==="
+          ls -la f5-openstack-agent-dist/deb_dist/ || echo "No DEB dist directory"
+          
+          # Find the actual RPM file
+          RPM_FILE=$(find f5-openstack-agent-dist/rpms/build -name "*.el7.noarch.rpm" 2>/dev/null | head -1)
+          if [ -n "$RPM_FILE" ]; then
+            echo "Found RPM: $RPM_FILE"
+            echo "PKG_RELEASE_EL7=${RPM_FILE}" >> $GITHUB_ENV
+          else
+            echo "WARNING: No EL7 RPM file found"
+            # List all RPM files
+            find f5-openstack-agent-dist -name "*.rpm" 2>/dev/null || echo "No RPM files found anywhere"
+          fi
+          
+          # Find the actual DEB file
+          DEB_FILE=$(find f5-openstack-agent-dist/deb_dist -name "*.deb" 2>/dev/null | head -1)
+          if [ -n "$DEB_FILE" ]; then
+            echo "Found DEB: $DEB_FILE"
+            echo "PKG_RELEASE_1404=${DEB_FILE}" >> $GITHUB_ENV
+          else
+            echo "WARNING: No DEB file found"
+            find f5-openstack-agent-dist -name "*.deb" 2>/dev/null || echo "No DEB files found anywhere"
+          fi
+
+      # - name: Test RedHat 7 package installation
+      #   if: env.PKG_RELEASE_EL7 != ''
+      #   run: f5-openstack-agent-dist/scripts/test_install.sh "redhat" "7" ${{ env.PKG_RELEASE_EL7 }}
+
+      # - name: Test Ubuntu 14.04 package installation
+      #   if: env.PKG_RELEASE_1404 != ''
+      #   run: f5-openstack-agent-dist/scripts/test_install.sh "ubuntu" "14.04" ${{ env.PKG_RELEASE_1404 }}
+
+      - name: Generate MD5 checksums
+        run: |
+          # Generate MD5 for all RPM files
+          for rpm in f5-openstack-agent-dist/rpms/build/*.rpm; do
+            if [ -f "$rpm" ]; then
+              md5sum "$rpm" > "${rpm}.md5"
+              echo "Generated MD5 for: $rpm"
+              md5sum --check "${rpm}.md5"
+            fi
+          done
+          
+          # Generate MD5 for all DEB files
+          for deb in f5-openstack-agent-dist/deb_dist/*.deb; do
+            if [ -f "$deb" ]; then
+              md5sum "$deb" > "${deb}.md5"
+              echo "Generated MD5 for: $deb"
+              md5sum --check "${deb}.md5"
+            fi
+          done
+
+      - name: Upload RPM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-packages
+          path: |
+            f5-openstack-agent-dist/rpms/build/*.rpm
+            f5-openstack-agent-dist/rpms/build/*.md5
+          if-no-files-found: warn
+
+      - name: Upload DEB artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-packages
+          path: |
+            f5-openstack-agent-dist/deb_dist/*.deb
+            f5-openstack-agent-dist/deb_dist/*.md5
+          if-no-files-found: warn
+
+  build-docs:
+    runs-on: ubuntu-22.04
+    needs: lint-and-unit-test
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Pull docs container
+        run: docker pull f5devcentral/containthedocs:latest
+
+      - name: Build and test docs
+        run: ./docs/scripts/docker-docs.sh ./docs/scripts/test-docs.sh
+
+  release:
+    needs: [build-packages, build-docs]
+    runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+      - name: Download RPM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: rpm-packages
+          path: ./artifacts/rpms
+
+      - name: Download DEB artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: deb-packages
+          path: ./artifacts/debs
+
+      - name: List downloaded artifacts
+        run: |
+          echo "=== RPM artifacts ==="
+          ls -la ./artifacts/rpms/ || echo "No RPMs"
+          echo ""
+          echo "=== DEB artifacts ==="
+          ls -la ./artifacts/debs/ || echo "No DEBs"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ./artifacts/rpms/*
+            ./artifacts/debs/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-pypi:
+    needs: [build-packages, build-docs]
+    runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build and publish to PyPI
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            -e TWINE_USERNAME=${{ secrets.PYPI_USER }} \
+            -e TWINE_PASSWORD=${{ secrets.PYPI_PASSWORD }} \
+            zhaoqin/f5-openstack-client:latest \
+            bash -c '
+              pip install twine wheel
+              python setup.py sdist bdist_wheel
+              twine upload --repository-url https://upload.pypi.org/legacy/ dist/*
+            '
+
+  deploy-docs:
+    needs: [build-packages, build-docs]
+    runs-on: ubuntu-22.04
+    if: |
+      contains(github.ref_name, '-stable') || 
+      (startsWith(github.ref, 'refs/tags/') && contains(github.ref_name, 'v'))
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set CTLR_VERSION
+        run: |
+          BRANCH_NAME=${GITHUB_REF_NAME}
+          if [[ "$BRANCH_NAME" == *"-stable" ]]; then
+            CTLR_VERSION="v$(echo $BRANCH_NAME | sed 's/-stable//g')"
+          elif [[ "$BRANCH_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]* ]]; then
+            IFS='.' read -ra va <<< "${BRANCH_NAME//v/}"
+            CTLR_VERSION="v${va[0]}.${va[1]}"
+          else
+            CTLR_VERSION="$BRANCH_NAME"
+          fi
+          echo "CTLR_VERSION=${CTLR_VERSION}" >> $GITHUB_ENV
+
+      - name: Deploy docs
+        run: ./build-tools/deploy-docs.sh publish-product-docs-to-prod openstack/agent ${{ env.CTLR_VERSION }}
+
+  notify:
+    needs: [lint-and-unit-test, build-packages, build-docs]
+    runs-on: ubuntu-22.04
+    if: always()
+    
+    steps:
+      - name: Slack Notification on Success
+        if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+        uses: slackapi/slack-github-action@v1.25.0
+        with:
+          channel-id: 'f5-openstack-agent,build_status'
+          slack-message: "✅ Build succeeded for ${{ github.repository }}@${{ github.ref_name }}"
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_TOKEN }}
+
+      - name: Slack Notification on Failure
+        if: ${{ contains(needs.*.result, 'failure') }}
+        uses: slackapi/slack-github-action@v1.25.0
+        with:
+          channel-id: 'f5-openstack-agent,build_status'
+          slack-message: "❌ Build failed for ${{ github.repository }}@${{ github.ref_name }}"
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_TOKEN }}
