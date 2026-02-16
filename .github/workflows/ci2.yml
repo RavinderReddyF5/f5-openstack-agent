@@ -15,23 +15,25 @@ env:
 
 jobs:
   lint-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    container:
+      image: python:2.7-buster
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python 2.7
-        uses: actions/setup-python@v5
-        with:
-          python-version: '2.7'
-        # Note: Python 2.7 is EOL. Consider upgrading to Python 3.x
-        # If Python 2.7 is unavailable, use a container instead (see alternative below)
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          apt-get install -y git docker.io sudo rpm
 
       - name: Configure Git
         run: |
           git config --global user.email "OpenStack_TravisCI@f5.com"
           git config --global user.name "Travis F5 Openstack"
+          # Fix for git safe directory in container
+          git config --global --add safe.directory $GITHUB_WORKSPACE
 
       - name: Set environment variables
         id: vars
@@ -55,11 +57,9 @@ jobs:
           fi
           echo "CTLR_VERSION=${CTLR_VERSION}" >> $GITHUB_ENV
 
-      - name: Pull Docker image
-        run: docker pull f5devcentral/containthedocs:latest
-
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
+          pip install --upgrade pip setuptools
           pip install tox
           pip install -r requirements.style.txt
 
@@ -97,16 +97,13 @@ jobs:
 
       - name: Fix permissions
         run: |
-          sudo chown -R $USER:$USER ${DIST_REPO}/rpms/build
-          sudo chown -R $USER:$USER ${DIST_REPO}/deb_dist/*.deb
+          chown -R $(id -u):$(id -g) ${DIST_REPO}/rpms/build || true
+          chown -R $(id -u):$(id -g) ${DIST_REPO}/deb_dist/*.deb || true
 
       - name: Test package installation
         run: |
           f5-openstack-agent-dist/scripts/test_install.sh "redhat" "7" ${{ env.PKG_RELEASE_EL7 }}
           f5-openstack-agent-dist/scripts/test_install.sh "ubuntu" "14.04" ${{ env.PKG_RELEASE_1404 }}
-
-      - name: Build and test docs
-        run: ./docs/scripts/docker-docs.sh ./docs/scripts/test-docs.sh
 
       - name: Generate MD5 checksums
         run: |
@@ -125,75 +122,76 @@ jobs:
             ${{ env.PKG_RELEASE_1404 }}
             ${{ env.PKG_RELEASE_1404 }}.md5
 
-  release:
+  # Docker-based docs build (runs outside container)
+  build-docs:
+    runs-on: ubuntu-22.04
     needs: lint-and-test
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python 2.7
-        uses: actions/setup-python@v5
-        with:
-          python-version: '2.7'
+      - name: Pull docs container
+        run: docker pull f5devcentral/containthedocs:latest
 
-      - name: Set environment variables
-        run: |
-          PKG_VERSION=$(python -c "import f5_openstack_agent; print f5_openstack_agent.__version__")
-          PKG_RELEASE=$(python ${DIST_REPO}/scripts/get-version-release.py --release)
-          echo "PKG_VERSION=${PKG_VERSION}" >> $GITHUB_ENV
-          echo "PKG_RELEASE=${PKG_RELEASE}" >> $GITHUB_ENV
-          echo "PKG_RELEASE_EL7=${DIST_REPO}/rpms/build/f5-openstack-agent-${PKG_VERSION}-${PKG_RELEASE}.el7.noarch.rpm" >> $GITHUB_ENV
-          echo "PKG_RELEASE_1404=${DIST_REPO}/deb_dist/python-f5-openstack-agent_${PKG_VERSION}-${PKG_RELEASE}_1404_all.deb" >> $GITHUB_ENV
+      - name: Build and test docs
+        run: ./docs/scripts/docker-docs.sh ./docs/scripts/test-docs.sh
+
+  release:
+    needs: [lint-and-test, build-docs]
+    runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           name: packages
+          path: ./artifacts
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            ${{ env.PKG_RELEASE_EL7 }}
-            ${{ env.PKG_RELEASE_EL7 }}.md5
-            ${{ env.PKG_RELEASE_1404 }}
-            ${{ env.PKG_RELEASE_1404 }}.md5
+            ./artifacts/**/*.rpm
+            ./artifacts/**/*.rpm.md5
+            ./artifacts/**/*.deb
+            ./artifacts/**/*.deb.md5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish-pypi:
-    needs: lint-and-test
-    runs-on: ubuntu-latest
+    needs: [lint-and-test, build-docs]
+    runs-on: ubuntu-22.04
+    container:
+      image: python:2.7-buster
     if: startsWith(github.ref, 'refs/tags/')
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python 2.7
-        uses: actions/setup-python@v5
-        with:
-          python-version: '2.7'
-
       - name: Install build dependencies
         run: |
-          pip install setuptools wheel twine
+          pip install --upgrade pip setuptools wheel
+          pip install twine
 
       - name: Build distributions
         run: python setup.py sdist bdist_wheel
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          user: ${{ secrets.PYPI_USER }}
-          password: ${{ secrets.PYPI_PASSWORD }}
+        env:
+          TWINE_USERNAME: ${{ secrets.PYPI_USER }}
+          TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+        run: |
+          twine upload --repository-url https://upload.pypi.org/legacy/ dist/*
 
   deploy-docs:
-    needs: lint-and-test
-    runs-on: ubuntu-latest
+    needs: [lint-and-test, build-docs]
+    runs-on: ubuntu-22.04
     if: |
       contains(github.ref_name, '-stable') || 
       (startsWith(github.ref, 'refs/tags/') && contains(github.ref_name, 'v'))
@@ -219,13 +217,13 @@ jobs:
         run: ./build-tools/deploy-docs.sh publish-product-docs-to-prod openstack/agent ${{ env.CTLR_VERSION }}
 
   notify:
-    needs: [lint-and-test, release, publish-pypi, deploy-docs]
-    runs-on: ubuntu-latest
+    needs: [lint-and-test, build-docs, release, publish-pypi, deploy-docs]
+    runs-on: ubuntu-22.04
     if: always()
     
     steps:
       - name: Slack Notification on Success
-        if: ${{ needs.lint-and-test.result == 'success' && (needs.lint-and-test.result != needs.release.result || needs.lint-and-test.result != needs.publish-pypi.result) }}
+        if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
         uses: slackapi/slack-github-action@v1.25.0
         with:
           channel-id: 'f5-openstack-agent,build_status'
@@ -234,10 +232,10 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_TOKEN }}
 
       - name: Slack Notification on Failure
-        if: ${{ failure() }}
+        if: ${{ contains(needs.*.result, 'failure') }}
         uses: slackapi/slack-github-action@v1.25.0
         with:
           channel-id: 'f5-openstack-agent,build_status'
-          slack-message: "❌ Build failed for ${{ github.repository }}@${{ github.ref_name }}"
+          slack-message: "❌ Build failed for ${{ github.repository }}@${{ github.ref_name }}\nWorkflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_TOKEN }}
